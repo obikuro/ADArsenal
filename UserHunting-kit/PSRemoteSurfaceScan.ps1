@@ -118,6 +118,10 @@ Maximum number of simultaneous remoting connections (default: 32).
 .PARAMETER TimeoutSeconds
 Timeout in seconds for each remoting connection attempt (default: 30).
 
+.PARAMETER Quiet
+Suppress all progress status messages (Write-Host / Write-Progress).
+Only warnings and errors are shown. Output objects are unaffected.
+
 .OUTPUTS
 [pscustomobject] with:
     ComputerName  - Target computer
@@ -168,7 +172,11 @@ Invoke-PSRemoteSurfaceScan -Domain "example.com" -Credential (Get-Credential) -T
 
         [Parameter(Mandatory = $false, Position = 6)]
         [int]
-        $TimeoutSeconds = 30
+        $TimeoutSeconds = 30,
+
+        [Parameter(Mandatory = $false)]
+        [switch]
+        $Quiet
     )
 
     begin {
@@ -198,12 +206,12 @@ Invoke-PSRemoteSurfaceScan -Domain "example.com" -Credential (Get-Credential) -T
 
         # If nothing yet, enumerate from AD domain
         if ($resolvedComputers.Count -eq 0) {
-            Write-Host "  [*] No target list supplied — enumerating computers from AD." -ForegroundColor DarkCyan
+            if (-not $Quiet) { Write-Host "  [*] No target list supplied — enumerating computers from AD." -ForegroundColor DarkCyan }
 
             $searcher = New-Object System.DirectoryServices.DirectorySearcher
 
             if ($Domain) {
-                Write-Host "  [*] AD search root: LDAP://$Domain" -ForegroundColor DarkCyan
+                if (-not $Quiet) { Write-Host "  [*] AD search root: LDAP://$Domain" -ForegroundColor DarkCyan }
                 if ($Credential) {
                     $searcher.SearchRoot = New-Object System.DirectoryServices.DirectoryEntry(
                         "LDAP://$Domain",
@@ -216,7 +224,7 @@ Invoke-PSRemoteSurfaceScan -Domain "example.com" -Credential (Get-Credential) -T
                 }
             }
             else {
-                Write-Host "  [*] AD search root: current domain (auto-discover)" -ForegroundColor DarkCyan
+                if (-not $Quiet) { Write-Host "  [*] AD search root: current domain (auto-discover)" -ForegroundColor DarkCyan }
                 if ($Credential) {
                     # Auto-discover the domain root via RootDSE using the supplied credentials
                     try {
@@ -264,7 +272,7 @@ Invoke-PSRemoteSurfaceScan -Domain "example.com" -Credential (Get-Credential) -T
         }
 
         $total = $resolvedComputers.Count
-        Write-Host "Scanning $total computer(s) for PSRemoting access  [ThrottleLimit: $ThrottleLimit | Timeout: ${TimeoutSeconds}s]" -ForegroundColor Cyan
+        if (-not $Quiet) { Write-Host "  [*] Scanning $total computer(s) for PSRemoting access  [ThrottleLimit: $ThrottleLimit | Timeout: ${TimeoutSeconds}s]" -ForegroundColor Cyan }
 
         # Session options enforce per-connection timeout
         $sessionOption = New-PSSessionOption `
@@ -322,12 +330,14 @@ Invoke-PSRemoteSurfaceScan -Domain "example.com" -Credential (Get-Credential) -T
             $i++
             $key = $computer.ToLower()
 
-            Write-Progress -Activity 'PSRemote Surface Scan' `
-                           -Status   "[$i/$total] $computer" `
-                           -PercentComplete ([int](($i / $total) * 100))
+            if (-not $Quiet) {
+                Write-Progress -Activity 'PSRemote Surface Scan' `
+                               -Status   "[$i/$total] $computer" `
+                               -PercentComplete ([int](($i / $total) * 100))
+            }
 
             if ($successMap.ContainsKey($key)) {
-                Write-Host "  [+] $computer" -ForegroundColor Green
+                if (-not $Quiet) { Write-Host "  [+] $computer" -ForegroundColor Green }
                 $obj = [pscustomobject]@{
                     ComputerName  = $computer
                     HasAccess     = $true
@@ -337,14 +347,14 @@ Invoke-PSRemoteSurfaceScan -Domain "example.com" -Credential (Get-Credential) -T
                 $results.Add($obj)
 
                 if ($StopOnSuccess) {
-                    Write-Progress -Activity 'PSRemote Surface Scan' -Completed
+                    if (-not $Quiet) { Write-Progress -Activity 'PSRemote Surface Scan' -Completed }
                     $obj
                     return
                 }
             }
             elseif ($errorMap.ContainsKey($key)) {
                 $info = $errorMap[$key]
-                Write-Host "  [-] $computer  [$($info.Category)] $($info.Short)" -ForegroundColor Red
+                if (-not $Quiet) { Write-Host "  [-] $computer  [$($info.Category)] $($info.Short)" -ForegroundColor Red }
                 $results.Add([pscustomobject]@{
                     ComputerName  = $computer
                     HasAccess     = $false
@@ -353,7 +363,7 @@ Invoke-PSRemoteSurfaceScan -Domain "example.com" -Credential (Get-Credential) -T
                 })
             }
             else {
-                Write-Host "  [?] $computer  [NoResult]" -ForegroundColor Yellow
+                if (-not $Quiet) { Write-Host "  [?] $computer  [NoResult]" -ForegroundColor Yellow }
                 $results.Add([pscustomobject]@{
                     ComputerName  = $computer
                     HasAccess     = $false
@@ -363,11 +373,13 @@ Invoke-PSRemoteSurfaceScan -Domain "example.com" -Credential (Get-Credential) -T
             }
         }
 
-        Write-Progress -Activity 'PSRemote Surface Scan' -Completed
+        if (-not $Quiet) { Write-Progress -Activity 'PSRemote Surface Scan' -Completed }
 
         $successCount = ($results | Where-Object { $_.HasAccess }).Count
-        Write-Host ""
-        Write-Host "Scan complete — $successCount/$total host(s) with PSRemoting access." -ForegroundColor Cyan
+        if (-not $Quiet) {
+            Write-Host ""
+            Write-Host "  [*] Scan complete — $successCount/$total host(s) with PSRemoting access." -ForegroundColor Cyan
+        }
 
         $results
     }
